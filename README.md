@@ -51,7 +51,7 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
 1. Clone the repository:
 ```bash
 git clone https://dapt-gitlab.avl.com/proj/dfe0195/pytorchvsjax.git
-cd pytorch-jax-benchmark
+cd pytorchvsjax
 ```
 
 2. Create and activate a virtual environment (recommended):
@@ -74,7 +74,7 @@ python -c "import jax; print('JAX devices:', jax.devices())"
 ## Project Structure
 
 ```
-pytorch_jax_benchmark/
+pytorchvsjax/
 ├── benchmark_base.py     # Base classes and utilities
 ├── pytorch_benchmarks.py # PyTorch implementations
 ├── jax_benchmarks.py     # JAX implementations
