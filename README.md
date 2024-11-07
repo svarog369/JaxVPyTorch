@@ -50,7 +50,7 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/pytorch-jax-benchmark.git
+git clone https://dapt-gitlab.avl.com/proj/dfe0195/pytorchvsjax.git
 cd pytorch-jax-benchmark
 ```
 
