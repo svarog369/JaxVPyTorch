@@ -163,11 +163,11 @@ class PyTorchBenchmark(BenchmarkBase):
         """Benchmark optimizer update step"""
         # Clear GPU cache before starting
         torch.cuda.empty_cache()
-        
+
         # Use a more memory-efficient size for the model
         reduced_size = min(num_params, 512)  # Cap the size to prevent OOM
         model = torch.nn.Linear(reduced_size, reduced_size).cuda()
-        
+
         if optimizer == "adam":
             opt = torch.optim.Adam(model.parameters())
         elif optimizer == "sgd":
@@ -175,8 +175,8 @@ class PyTorchBenchmark(BenchmarkBase):
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
-        x = torch.randn(1, reduced_size, device='cuda')
-        target = torch.randn(1, reduced_size, device='cuda')
+        x = torch.randn(1, reduced_size, device="cuda")
+        target = torch.randn(1, reduced_size, device="cuda")
 
         def optimization_step():
             opt.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
@@ -190,9 +190,9 @@ class PyTorchBenchmark(BenchmarkBase):
                 f"optimizer_{optimizer}",
                 {
                     "num_params": reduced_size,  # Log the actual size used
-                    "optimizer": optimizer
+                    "optimizer": optimizer,
                 },
-                optimization_step
+                optimization_step,
             )
         finally:
             # Cleanup
@@ -213,7 +213,7 @@ class PyTorchBenchmark(BenchmarkBase):
             for _ in range(self.config.test_iterations):
                 # Clear cache before each iteration
                 torch.cuda.empty_cache()
-                
+
                 start = time.perf_counter()
                 func()
                 torch.cuda.synchronize()
@@ -226,7 +226,7 @@ class PyTorchBenchmark(BenchmarkBase):
                 operation=operation,
                 mean_time=mean(times),
                 std_time=stdev(times),
-                parameters=parameters
+                parameters=parameters,
             )
             self.results.append(result)
             logging.info(
@@ -234,7 +234,7 @@ class PyTorchBenchmark(BenchmarkBase):
                 operation,
                 result.mean_time * 1000,
                 result.std_time * 1000,
-                parameters
+                parameters,
             )
         finally:
             # Final cleanup

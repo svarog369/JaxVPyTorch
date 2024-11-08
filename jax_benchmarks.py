@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import optax
 from typing import Any, Dict, List
 import logging
 from statistics import mean, stdev
@@ -65,7 +66,12 @@ class JAXBenchmark(BenchmarkBase):
 
         # JIT compile
         transformer_layer_jit = jit(lambda x: transformer_layer(x, weights))
-        transformer_layer_jit(x)  # Compile
+
+        # Compile once
+        transformer_layer_jit(x)
+
+        def run_transformer():
+            transformer_layer_jit(x)
 
         self.run_timed_operation(
             "transformer_layer",
@@ -75,69 +81,110 @@ class JAXBenchmark(BenchmarkBase):
                 "hidden_size": hidden_size,
                 "num_heads": num_heads,
             },
-            transformer_layer_jit(x),
+            run_transformer,
         )
 
     def benchmark_lstm(self, batch_size: int, seq_len: int, hidden_size: int):
         """Benchmark LSTM forward and backward pass"""
 
-        def lstm_cell(carry, x):
+        def lstm_cell(carry, x_t):
             h_prev, c_prev = carry
 
+            # Ensure x_t has shape (batch_size, hidden_size)
+            if len(x_t.shape) == 1:
+                x_t = jnp.expand_dims(x_t, 0)
+
+            # Ensure h_prev and c_prev match batch size
+            if h_prev.shape[0] != x_t.shape[0]:
+                h_prev = jnp.repeat(h_prev, x_t.shape[0], axis=0)
+                c_prev = jnp.repeat(c_prev, x_t.shape[0], axis=0)
+
             # Gates
-            gates = jnp.concatenate([h_prev, x], axis=-1)
+            gates = jnp.concatenate([h_prev, x_t], axis=-1)
             gates = jnp.matmul(gates, weights["kernel"])
 
             # Split gates
-            i, f, g, o = jnp.split(gates, 4, axis=-1)
+            gates = jnp.split(gates, 4, axis=-1)
+            i, f, g, o = gates
+
+            # Apply gate activations
+            i = jax.nn.sigmoid(i)
+            f = jax.nn.sigmoid(f)
+            g = jnp.tanh(g)
+            o = jax.nn.sigmoid(o)
 
             # Update cell state
-            c = jnp.tanh(g) * jax.nn.sigmoid(i) + c_prev * jax.nn.sigmoid(f)
-            h = jnp.tanh(c) * jax.nn.sigmoid(o)
+            c = f * c_prev + i * g
+            h = o * jnp.tanh(c)
 
             return (h, c), h
 
-        # Initialize weights
+        # Initialize weights with proper scaling
         key1, key2 = random.split(self.key)
-        weights = {"kernel": random.normal(key1, (hidden_size * 2, hidden_size * 4))}
+        input_size = hidden_size
+        weights = {
+            "kernel": random.normal(key1, (input_size + hidden_size, hidden_size * 4))
+            / jnp.sqrt(input_size + hidden_size)
+        }
 
-        x = random.normal(key2, (batch_size, seq_len, hidden_size))
+        # Create input sequence
+        x = random.normal(key2, (seq_len, batch_size, hidden_size))
+
+        # Initialize hidden states properly
         h0 = jnp.zeros((batch_size, hidden_size))
         c0 = jnp.zeros((batch_size, hidden_size))
 
-        # JIT compile
-        lstm_scan = jit(lambda x: jax.lax.scan(lstm_cell, (h0, c0), x)[1])
-        lstm_scan(x)  # Compile
+        # JIT compile the scan
+        @jit
+        def lstm_forward(x):
+            return jax.lax.scan(lstm_cell, (h0, c0), x)[1]
+
+        # Compile once
+        lstm_forward(x)
+
+        def run_lstm():
+            lstm_forward(x)
 
         self.run_timed_operation(
             "lstm",
             {"batch_size": batch_size, "seq_len": seq_len, "hidden_size": hidden_size},
-            lstm_scan(x),
+            run_lstm,
         )
 
     def benchmark_mlp(self, batch_size: int, input_size: int, hidden_sizes: List[int]):
         """Benchmark MLP forward and backward pass"""
 
         def mlp(x, weights):
+            activation = x
             for i in range(len(hidden_sizes)):
-                x = jnp.matmul(x, weights[f"layer_{i}"])
-                x = jax.nn.relu(x)
-                x = jax.random.bernoulli(random.PRNGKey(0), 0.9, x.shape) * x  # dropout
-            return x
+                activation = jnp.matmul(activation, weights[f"layer_{i}"])
+                activation = jax.nn.relu(activation)
+                # Apply dropout using JAX's random key
+                key = random.fold_in(self.key, i)
+                mask = random.bernoulli(key, 0.9, activation.shape)
+                activation = mask * activation
+            return activation
 
-        # Initialize weights
+        # Initialize weights with proper scaling
         weights = {}
         prev_size = input_size
         for i, size in enumerate(hidden_sizes):
             key = random.fold_in(self.key, i)
-            weights[f"layer_{i}"] = random.normal(key, (prev_size, size))
+            scale = jnp.sqrt(2.0 / prev_size)  # He initialization
+            weights[f"layer_{i}"] = random.normal(key, (prev_size, size)) * scale
             prev_size = size
 
+        # Create input data
         x = random.normal(self.key, (batch_size, input_size))
 
         # JIT compile
         mlp_jit = jit(lambda x: mlp(x, weights))
-        mlp_jit(x)  # Compile
+
+        # Compile once
+        mlp_jit(x)
+
+        def run_mlp():
+            mlp_jit(x)
 
         self.run_timed_operation(
             "mlp",
@@ -146,7 +193,7 @@ class JAXBenchmark(BenchmarkBase):
                 "input_size": input_size,
                 "hidden_sizes": hidden_sizes,
             },
-            mlp_jit(x),
+            run_mlp,
         )
 
     def benchmark_attention(self, batch_size: int, seq_len: int, hidden_size: int):
@@ -163,12 +210,16 @@ class JAXBenchmark(BenchmarkBase):
             weights = jax.nn.softmax(scores, axis=-1)
             return jnp.matmul(weights, v)
 
-        attention(q, k, v)  # Compile
+        # Compile once
+        attention(q, k, v)
+
+        def run_attention():
+            attention(q, k, v)
 
         self.run_timed_operation(
             "attention",
             {"batch_size": batch_size, "seq_len": seq_len, "hidden_size": hidden_size},
-            attention(q, k, v),
+            run_attention,
         )
 
     def benchmark_embedding(self, batch_size: int, vocab_size: int, embedding_dim: int):
@@ -183,6 +234,9 @@ class JAXBenchmark(BenchmarkBase):
 
         embedding_lookup(indices)  # Compile
 
+        def run_embedding_lookup():
+            embedding_lookup(indices)
+
         self.run_timed_operation(
             "embedding",
             {
@@ -190,41 +244,67 @@ class JAXBenchmark(BenchmarkBase):
                 "vocab_size": vocab_size,
                 "embedding_dim": embedding_dim,
             },
-            embedding_lookup(indices),
+            run_embedding_lookup,
         )
 
     def benchmark_optimizer_step(self, num_params: int, optimizer: str):
-        """Benchmark optimizer update step"""
+        """Benchmark optimizer update step with memory-efficient implementation"""
+        # Cap the parameter size to prevent OOM
+        max_params = 1000  # Limit to prevent excessive memory usage
+        reduced_size = min(num_params, max_params)
+
         key1, key2 = random.split(self.key)
-        params = random.normal(key1, (num_params, num_params))
-        x = random.normal(key2, (1, num_params))
+
+        # Use a more memory-efficient parameter shape (n×k) instead of (n×n)
+        k = min(reduced_size, 100)  # Further reduce second dimension
+        params = random.normal(key1, (reduced_size, k))
+        x = random.normal(key2, (1, reduced_size))
 
         def loss_fn(params, x):
-            output = jnp.matmul(x, params)
+            # Use a more memory-efficient computation
+            output = jnp.matmul(x, params)  # Results in (1, k) matrix
             return jnp.mean(output**2)
 
         if optimizer == "adam":
-            opt_init, opt_update, get_params = jax.experimental.optimizers.adam(1e-3)
+            tx = optax.adam(learning_rate=1e-3)
         elif optimizer == "sgd":
-            opt_init, opt_update, get_params = jax.experimental.optimizers.sgd(0.01)
+            tx = optax.sgd(learning_rate=0.01)
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
-        opt_state = opt_init(params)
+        # Initialize optimizer state
+        opt_state = tx.init(params)
 
+        # Calculate gradients
         @jit
-        def update(opt_state, x):
-            params = get_params(opt_state)
-            grads = grad(loss_fn)(params, x)
-            return opt_update(0, grads, opt_state)
+        def compute_step(params, opt_state, x):
+            loss_value, grads = jax.value_and_grad(loss_fn)(params, x)
+            updates, new_opt_state = tx.update(grads, opt_state, params)
+            new_params = optax.apply_updates(params, updates)
+            return new_params, new_opt_state, loss_value
 
-        update(opt_state, x)  # Compile
+        # Compile once
+        compute_step(params, opt_state, x)
 
-        self.run_timed_operation(
-            f"optimizer_{optimizer}",
-            {"num_params": num_params, "optimizer": optimizer},
-            update(opt_state, x),
-        )
+        def run_step():
+            nonlocal params, opt_state
+            params, opt_state, _ = compute_step(params, opt_state, x)
+
+        try:
+            self.run_timed_operation(
+                f"optimizer_{optimizer}",
+                {
+                    "num_params": reduced_size,  # Log the actual size used
+                    "optimizer": optimizer,
+                    "k_dim": k,  # Log the reduced second dimension
+                },
+                run_step,
+            )
+        finally:
+            # Cleanup
+            params = None
+            opt_state = None
+            jax.clear_caches()  # Clear any cached computations
 
     def run_timed_operation(self, operation: str, parameters: Dict[str, Any], func):
         """Simple timing function for JAX operations"""
@@ -283,14 +363,24 @@ class JAXBenchmark(BenchmarkBase):
         size = 32
 
         key1, key2 = random.split(self.key)
+
+        # JAX expects kernels in (out_channels, in_channels, height, width) format
         kernel = random.normal(
-            key1, (kernel_size, kernel_size, in_channels, out_channels)
+            key1, (out_channels, in_channels, kernel_size, kernel_size)
         ) * jnp.sqrt(2.0 / (kernel_size * kernel_size * in_channels))
-        x = random.normal(key2, (batch_size, size, size, in_channels))
+
+        # JAX expects input in (batch_size, in_channels, height, width) format
+        x = random.normal(key2, (batch_size, in_channels, size, size))
 
         @jit
         def conv(x, kernel):
-            return jax.lax.conv(x, kernel, window_strides=(1, 1), padding="SAME")
+            return jax.lax.conv_general_dilated(
+                x,
+                kernel,
+                window_strides=(1, 1),
+                padding="SAME",
+                dimension_numbers=("NCHW", "OIHW", "NCHW"),  # Specify dimension format
+            )
 
         # Compile once
         conv(x, kernel)
@@ -315,21 +405,26 @@ class JAXBenchmark(BenchmarkBase):
         size = 32
 
         key = random.split(self.key)[0]
-        x = random.normal(key, (batch_size, size, size, num_features))
+        # Use NCHW format for consistency
+        x = random.normal(key, (batch_size, num_features, size, size))
 
         @jit
         def batchnorm(x):
-            mean = jnp.mean(x, axis=(0, 1, 2), keepdims=True)
-            var = jnp.var(x, axis=(0, 1, 2), keepdims=True)
+            # Calculate mean and variance over N, H, W dimensions
+            mean = jnp.mean(x, axis=(0, 2, 3), keepdims=True)
+            var = jnp.var(x, axis=(0, 2, 3), keepdims=True)
             return (x - mean) / jnp.sqrt(var + 1e-5)
 
         # Compile once
         batchnorm(x)
 
+        def run_batchnorm():
+            batchnorm(x)
+
         self.run_timed_operation(
             "batchnorm",
             {"batch_size": batch_size, "num_features": num_features},
-            batchnorm(x),
+            run_batchnorm,
         )
 
     def benchmark_gradient(self, size: int):
@@ -346,4 +441,7 @@ class JAXBenchmark(BenchmarkBase):
         # Compile once
         grad_fn(x)
 
-        self.run_timed_operation("gradient", {"size": size}, grad_fn(x))
+        def run_grad():
+            grad_fn(x)
+
+        self.run_timed_operation("gradient", {"size": size}, run_grad)

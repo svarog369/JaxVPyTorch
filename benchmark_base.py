@@ -50,17 +50,18 @@ class NNConfig:
 
 class BenchmarkConfig:
     """Configuration for benchmark runs with memory-efficient defaults"""
+
     def __init__(self):
         # Reduced batch sizes
         self.batch_sizes = [1, 8, 16, 32]  # Removed larger batch sizes
-        
+
         # Reduced matrix sizes
         self.matrix_sizes = [128, 256, 512]  # Removed larger matrix sizes
-        
+
         # Reduced number of iterations
         self.warmup_iterations = 5  # Reduced from 10
-        self.test_iterations = 50   # Reduced from 100
-        
+        self.test_iterations = 50  # Reduced from 100
+
         self.seed = 42
         self.nn_config = NNConfig()
 
