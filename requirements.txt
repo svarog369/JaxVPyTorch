@@ -4,4 +4,3 @@ numpy>=1.21.0
 matplotlib>=3.4.0
 typing-extensions>=4.0.0
 optax>=0.2.3
-*.json

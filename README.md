@@ -6,7 +6,7 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
 
 ### Basic Operations
 - Matrix Multiplication
-- 2D Convolution
+- 2D Convolution (with NCHW format)
 - Batch Normalization
 - Gradient Computation
 
@@ -15,22 +15,27 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
   - Multi-head Attention
   - Feed-forward Networks
   - Different head configurations
+  - Memory-efficient implementation
 - LSTM Networks
   - Various sequence lengths
   - Forward and backward passes
+  - Proper shape handling for batched sequences
 - Multi-Layer Perceptrons (MLPs)
   - Different architectures
   - Dropout and ReLU activations
+  - Memory-efficient parameter handling
 - Attention Mechanisms
   - Scaled dot-product attention
   - Different sequence lengths
+  - Optimized tensor operations
 - Embedding Layers
   - Various vocabulary sizes
   - Different embedding dimensions
 - Optimizer Performance
-  - Adam
+  - Adam (using optax for JAX)
   - SGD
-  - Different parameter counts
+  - Memory-efficient parameter handling
+  - Configurable batch sizes
 
 ## Requirements
 
@@ -41,10 +46,27 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
   ```
   torch>=2.0.0
   jax[cuda]>=0.4.1
+  optax  # Required for JAX optimizers
   numpy>=1.21.0
   matplotlib>=3.4.0
   typing-extensions>=4.0.0
+  optax>=0.2.3
   ```
+
+## Memory Considerations
+
+The benchmark suite is designed to be memory-efficient and includes several optimizations:
+
+1. Parameter Size Limitations:
+   - Matrix operations use capped sizes
+   - Optimizer benchmarks use rectangular matrices instead of square
+   - Automatic size reduction for large parameter counts
+
+2. Memory Management:
+   - Explicit cleanup after benchmarks
+   - Cache clearing for JAX operations
+   - GPU memory monitoring
+   - Proper tensor cleanup
 
 ## Installation
 
@@ -96,26 +118,6 @@ This will:
 2. Generate detailed logs in `benchmark_results.log`
 3. Save structured results in `benchmark_results.json`
 4. Create performance comparison plots as `benchmark_*.png`
-
-### Customizing Benchmarks
-
-Modify the configuration in `main.py` to customize the benchmark parameters:
-
-```python
-config = BenchmarkConfig()
-
-# Customize basic operations
-config.batch_sizes = [1, 8, 16, 32]
-config.matrix_sizes = [128, 256, 512]
-config.warmup_iterations = 5
-config.test_iterations = 50
-
-# Customize neural network configurations
-config.nn_config.hidden_sizes = [64, 128, 256]
-config.nn_config.sequence_lengths = [16, 32, 64]
-config.nn_config.embedding_dims = [32, 64, 128]
-config.nn_config.num_heads = [1, 2, 4]
-```
 
 ## Monitoring
 
