@@ -53,14 +53,14 @@ class BenchmarkConfig:
 
     def __init__(self):
         # Reduced batch sizes
-        self.batch_sizes = [1, 8, 16, 32]  # Removed larger batch sizes
+        self.batch_sizes = [32, 64, 128, 256, 512, 600]
 
         # Reduced matrix sizes
-        self.matrix_sizes = [128, 256, 512]  # Removed larger matrix sizes
+        self.matrix_sizes = [128, 256, 512, 1024]
 
         # Reduced number of iterations
-        self.warmup_iterations = 5  # Reduced from 10
-        self.test_iterations = 50  # Reduced from 100
+        self.warmup_iterations = 10
+        self.test_iterations = 100
 
         self.seed = 42
         self.nn_config = NNConfig()
@@ -123,6 +123,7 @@ class BenchmarkBase:
 
 class ResultManager:
     """Manages benchmark results and visualization"""
+
     def __init__(self):
         self.results = []
 
@@ -132,35 +133,35 @@ class ResultManager:
     def _config_to_dict(self, config):
         """Convert config object to a JSON-serializable dictionary"""
         config_dict = {
-            'batch_sizes': config.batch_sizes,
-            'matrix_sizes': config.matrix_sizes,
-            'warmup_iterations': config.warmup_iterations,
-            'test_iterations': config.test_iterations,
-            'seed': config.seed,
-            'nn_config': {
-                'hidden_sizes': config.nn_config.hidden_sizes,
-                'sequence_lengths': config.nn_config.sequence_lengths,
-                'embedding_dims': config.nn_config.embedding_dims,
-                'num_heads': config.nn_config.num_heads
-            }
+            "batch_sizes": config.batch_sizes,
+            "matrix_sizes": config.matrix_sizes,
+            "warmup_iterations": config.warmup_iterations,
+            "test_iterations": config.test_iterations,
+            "seed": config.seed,
+            "nn_config": {
+                "hidden_sizes": config.nn_config.hidden_sizes,
+                "sequence_lengths": config.nn_config.sequence_lengths,
+                "embedding_dims": config.nn_config.embedding_dims,
+                "num_heads": config.nn_config.num_heads,
+            },
         }
         return config_dict
 
     def save_results(self, config: BenchmarkConfig) -> None:
         """Save benchmark results to JSON"""
         results_dict = {
-            'config': self._config_to_dict(config),
-            'results': [r.to_dict() for r in self.results]
+            "config": self._config_to_dict(config),
+            "results": [r.to_dict() for r in self.results],
         }
 
-        output_path = Path('benchmark_results.json')
-        with output_path.open('w') as f:
+        output_path = Path("benchmark_results.json")
+        with output_path.open("w") as f:
             json.dump(results_dict, f, indent=2)
 
         logging.info("Saved benchmark results to %s", output_path)
 
     def plot_results(self) -> None:
-        """Generate plots for benchmark results"""
+        """Generate detailed plots for benchmark results with min, max, and mean statistics"""
         operations = set(r.operation for r in self.results)
 
         for op in operations:
@@ -175,13 +176,17 @@ class ResultManager:
 
             # Identify the parameter to plot
             param_keys = list(op_results[0].parameters.keys())
-            main_param_key = next((k for k in ['size', 'batch_size', 'hidden_size', 'num_params'] 
-                                 if k in param_keys), param_keys[0])
+            main_param_key = next(
+                (
+                    k
+                    for k in ["size", "batch_size", "hidden_size", "num_params"]
+                    if k in param_keys
+                ),
+                param_keys[0],
+            )
 
             # Prepare data for plotting
-            param_values = sorted(set(
-                r.parameters[main_param_key] for r in op_results
-            ))
+            param_values = sorted(set(r.parameters[main_param_key] for r in op_results))
 
             pytorch_times = []
             jax_times = []
@@ -191,14 +196,20 @@ class ResultManager:
             for param_val in param_values:
                 # Get results for this parameter value
                 pytorch_result = next(
-                    (r for r in pytorch_results 
-                     if r.parameters[main_param_key] == param_val),
-                    None
+                    (
+                        r
+                        for r in pytorch_results
+                        if r.parameters[main_param_key] == param_val
+                    ),
+                    None,
                 )
                 jax_result = next(
-                    (r for r in jax_results 
-                     if r.parameters[main_param_key] == param_val),
-                    None
+                    (
+                        r
+                        for r in jax_results
+                        if r.parameters[main_param_key] == param_val
+                    ),
+                    None,
                 )
 
                 if pytorch_result and jax_result:
@@ -208,20 +219,80 @@ class ResultManager:
                     jax_stds.append(jax_result.std_time * 1000)
 
             if pytorch_times and jax_times:
-                plt.figure(figsize=(10, 6))
-                plt.errorbar(param_values, pytorch_times, yerr=pytorch_stds, 
-                           fmt='o-', label='PyTorch', capsize=5)
-                plt.errorbar(param_values, jax_times, yerr=jax_stds, 
-                           fmt='o-', label='JAX', capsize=5)
-                plt.xlabel(main_param_key)
-                plt.ylabel('Time (ms)')
-                plt.title(f'{op} Performance Comparison')
-                plt.legend()
-                plt.grid(True)
-                plt.yscale('log')  # Use log scale for better visualization
+                plt.figure(figsize=(12, 8))
 
-                output_path = f'benchmark_{op}.png'
-                plt.savefig(output_path)
+                # Plot with error bars
+                plt.errorbar(
+                    param_values,
+                    pytorch_times,
+                    yerr=pytorch_stds,
+                    fmt="o-",
+                    label="PyTorch",
+                    capsize=5,
+                    color="#EE4C2C",
+                )
+                plt.errorbar(
+                    param_values,
+                    jax_times,
+                    yerr=jax_stds,
+                    fmt="o-",
+                    label="JAX",
+                    capsize=5,
+                    color="#00A67E",
+                )
+
+                # Add min/max annotations
+                pytorch_min = min(pytorch_times)
+                pytorch_max = max(pytorch_times)
+                pytorch_mean = sum(pytorch_times) / len(pytorch_times)
+
+                jax_min = min(jax_times)
+                jax_max = max(jax_times)
+                jax_mean = sum(jax_times) / len(jax_times)
+
+                # Add statistics box
+                stats_text = (
+                    f"PyTorch Stats (ms):\n"
+                    f"Min: {pytorch_min:.3f}\n"
+                    f"Max: {pytorch_max:.3f}\n"
+                    f"Mean: {pytorch_mean:.3f}\n\n"
+                    f"JAX Stats (ms):\n"
+                    f"Min: {jax_min:.3f}\n"
+                    f"Max: {jax_max:.3f}\n"
+                    f"Mean: {jax_mean:.3f}"
+                )
+
+                plt.text(
+                    0.02,
+                    0.98,
+                    stats_text,
+                    transform=plt.gca().transAxes,
+                    verticalalignment="top",
+                    fontfamily="monospace",
+                    bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"),
+                )
+
+                plt.xlabel(main_param_key.replace("_", " ").title())
+                plt.ylabel("Time (ms)")
+                plt.title(f'{op.replace("_", " ").title()} Performance Comparison')
+                plt.legend()
+                plt.grid(True, which="both", ls="-", alpha=0.2)
+
+                # Use log scale if max/min ratio is large
+                if (
+                    max(max(pytorch_times), max(jax_times))
+                    / min(min(pytorch_times), min(jax_times))
+                    > 10
+                ):
+                    plt.yscale("log")
+                    plt.grid(True, which="minor", ls=":", alpha=0.1)
+
+                # Ensure some padding around the data
+                plt.margins(x=0.1)
+
+                output_path = f"benchmark_{op}.png"
+                plt.savefig(output_path, dpi=300, bbox_inches="tight")
                 plt.close()
 
                 logging.info("Saved %s benchmark plot to %s", op, output_path)
+                logging.info("%s benchmark statistics:\n%s", op, stats_text)
