@@ -123,22 +123,38 @@ class BenchmarkBase:
 
 class ResultManager:
     """Manages benchmark results and visualization"""
-
     def __init__(self):
         self.results = []
 
     def add_results(self, results):
         self.results.extend(results)
 
+    def _config_to_dict(self, config):
+        """Convert config object to a JSON-serializable dictionary"""
+        config_dict = {
+            'batch_sizes': config.batch_sizes,
+            'matrix_sizes': config.matrix_sizes,
+            'warmup_iterations': config.warmup_iterations,
+            'test_iterations': config.test_iterations,
+            'seed': config.seed,
+            'nn_config': {
+                'hidden_sizes': config.nn_config.hidden_sizes,
+                'sequence_lengths': config.nn_config.sequence_lengths,
+                'embedding_dims': config.nn_config.embedding_dims,
+                'num_heads': config.nn_config.num_heads
+            }
+        }
+        return config_dict
+
     def save_results(self, config: BenchmarkConfig) -> None:
         """Save benchmark results to JSON"""
         results_dict = {
-            "config": config.__dict__,
-            "results": [r.to_dict() for r in self.results],
+            'config': self._config_to_dict(config),
+            'results': [r.to_dict() for r in self.results]
         }
 
-        output_path = Path("benchmark_results.json")
-        with output_path.open("w") as f:
+        output_path = Path('benchmark_results.json')
+        with output_path.open('w') as f:
             json.dump(results_dict, f, indent=2)
 
         logging.info("Saved benchmark results to %s", output_path)
@@ -150,39 +166,62 @@ class ResultManager:
         for op in operations:
             op_results = [r for r in self.results if r.operation == op]
 
-            # Group by parameter values
-            param_key = list(op_results[0].parameters.keys())[0]
-            param_values = sorted(set(r.parameters[param_key] for r in op_results))
+            # Group by framework
+            pytorch_results = [r for r in op_results if r.framework == "pytorch"]
+            jax_results = [r for r in op_results if r.framework == "jax"]
+
+            if not pytorch_results or not jax_results:
+                continue
+
+            # Identify the parameter to plot
+            param_keys = list(op_results[0].parameters.keys())
+            main_param_key = next((k for k in ['size', 'batch_size', 'hidden_size', 'num_params'] 
+                                 if k in param_keys), param_keys[0])
+
+            # Prepare data for plotting
+            param_values = sorted(set(
+                r.parameters[main_param_key] for r in op_results
+            ))
 
             pytorch_times = []
             jax_times = []
+            pytorch_stds = []
+            jax_stds = []
 
             for param_val in param_values:
+                # Get results for this parameter value
                 pytorch_result = next(
-                    r
-                    for r in op_results
-                    if r.framework == "pytorch" and r.parameters[param_key] == param_val
+                    (r for r in pytorch_results 
+                     if r.parameters[main_param_key] == param_val),
+                    None
                 )
                 jax_result = next(
-                    r
-                    for r in op_results
-                    if r.framework == "jax" and r.parameters[param_key] == param_val
+                    (r for r in jax_results 
+                     if r.parameters[main_param_key] == param_val),
+                    None
                 )
 
-                pytorch_times.append(pytorch_result.mean_time * 1000)
-                jax_times.append(jax_result.mean_time * 1000)
+                if pytorch_result and jax_result:
+                    pytorch_times.append(pytorch_result.mean_time * 1000)
+                    jax_times.append(jax_result.mean_time * 1000)
+                    pytorch_stds.append(pytorch_result.std_time * 1000)
+                    jax_stds.append(jax_result.std_time * 1000)
 
-            plt.figure(figsize=(10, 6))
-            plt.plot(param_values, pytorch_times, "o-", label="PyTorch")
-            plt.plot(param_values, jax_times, "o-", label="JAX")
-            plt.xlabel(param_key)
-            plt.ylabel("Time (ms)")
-            plt.title(f"{op} Performance Comparison")
-            plt.legend()
-            plt.grid(True)
+            if pytorch_times and jax_times:
+                plt.figure(figsize=(10, 6))
+                plt.errorbar(param_values, pytorch_times, yerr=pytorch_stds, 
+                           fmt='o-', label='PyTorch', capsize=5)
+                plt.errorbar(param_values, jax_times, yerr=jax_stds, 
+                           fmt='o-', label='JAX', capsize=5)
+                plt.xlabel(main_param_key)
+                plt.ylabel('Time (ms)')
+                plt.title(f'{op} Performance Comparison')
+                plt.legend()
+                plt.grid(True)
+                plt.yscale('log')  # Use log scale for better visualization
 
-            output_path = f"benchmark_{op}.png"
-            plt.savefig(output_path)
-            plt.close()
+                output_path = f'benchmark_{op}.png'
+                plt.savefig(output_path)
+                plt.close()
 
-            logging.info("Saved %s benchmark plot to %s", op, output_path)
+                logging.info("Saved %s benchmark plot to %s", op, output_path)
