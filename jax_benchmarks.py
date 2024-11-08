@@ -1,7 +1,10 @@
 import jax
 import jax.numpy as jnp
+from typing import Any, Dict, List
+import logging
+from statistics import mean, stdev
+import time
 from jax import grad, jit, random
-from contextlib import contextmanager
 import numpy as np
 from benchmark_base import BenchmarkBase, BenchmarkResult
 
@@ -58,16 +61,16 @@ class JAXBenchmark(BenchmarkBase):
         transformer_layer_jit = jit(lambda x: transformer_layer(x, weights))
         transformer_layer_jit(x)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             "transformer_layer",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size,
                 "num_heads": num_heads
-            }
-        ):
+            },
             transformer_layer_jit(x)
+            )
             
     def benchmark_lstm(self, batch_size: int, seq_len: int, hidden_size: int):
         """Benchmark LSTM forward and backward pass"""
@@ -101,15 +104,15 @@ class JAXBenchmark(BenchmarkBase):
         lstm_scan = jit(lambda x: jax.lax.scan(lstm_cell, (h0, c0), x)[1])
         lstm_scan(x)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             "lstm",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size
-            }
-        ):
+            },
             lstm_scan(x)
+            )
             
     def benchmark_mlp(self, batch_size: int, input_size: int, hidden_sizes: List[int]):
         """Benchmark MLP forward and backward pass"""
@@ -134,15 +137,15 @@ class JAXBenchmark(BenchmarkBase):
         mlp_jit = jit(lambda x: mlp(x, weights))
         mlp_jit(x)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             "mlp",
             {
                 "batch_size": batch_size,
                 "input_size": input_size,
                 "hidden_sizes": hidden_sizes
-            }
-        ):
+            },
             mlp_jit(x)
+            )
             
     def benchmark_attention(self, batch_size: int, seq_len: int, hidden_size: int):
         """Benchmark attention mechanism"""
@@ -160,15 +163,15 @@ class JAXBenchmark(BenchmarkBase):
             
         attention(q, k, v)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             "attention",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size
-            }
-        ):
+            },
             attention(q, k, v)
+            )
             
     def benchmark_embedding(self, batch_size: int, vocab_size: int, embedding_dim: int):
         """Benchmark embedding layer"""
@@ -182,15 +185,15 @@ class JAXBenchmark(BenchmarkBase):
             
         embedding_lookup(indices)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             "embedding",
             {
                 "batch_size": batch_size,
                 "vocab_size": vocab_size,
                 "embedding_dim": embedding_dim
-            }
-        ):
+            },
             embedding_lookup(indices)
+            )
             
     def benchmark_optimizer_step(self, num_params: int, optimizer: str):
         """Benchmark optimizer update step"""
@@ -219,30 +222,30 @@ class JAXBenchmark(BenchmarkBase):
             
         update(opt_state, x)  # Compile
         
-        with self.timer(
+        self.run_timed_operation(
             f"optimizer_{optimizer}",
             {
                 "num_params": num_params,
                 "optimizer": optimizer
-            }
-        ):
-            update(opt_state, x)
+            },
+            update(opt_state, x),
+            )
         
-    @contextmanager
-    def timer(self, operation: str, parameters: Dict[str, Any]):
-        """Context manager for timing JAX operations"""
+    def run_timed_operation(self, operation: str, parameters: Dict[str, Any], func):
+        """Simple timing function for JAX operations"""
         times = []
         
-        # Warmup
+        # Warmup phase
         for _ in range(self.config.warmup_iterations):
-            yield
-            
-        # Actual timing
+            func()
+
+        # Timing phase
         for _ in range(self.config.test_iterations):
             start = time.perf_counter()
-            yield
+            func()
             times.append(time.perf_counter() - start)
-        
+
+        # Store and log results
         result = BenchmarkResult(
             name=f"jax_{operation}",
             framework="jax",
@@ -252,7 +255,6 @@ class JAXBenchmark(BenchmarkBase):
             parameters=parameters
         )
         self.results.append(result)
-        
         logging.info(
             "JAX %s - Mean: %.3f ms, Std: %.3f ms, Params: %s",
             operation,
@@ -266,55 +268,57 @@ class JAXBenchmark(BenchmarkBase):
         key1, key2 = random.split(self.key)
         a = random.normal(key1, (size, size))
         b = random.normal(key2, (size, size))
-        
+
         @jit
         def matmul(a, b):
             return jnp.matmul(a, b)
-        
+
         # Compile once
         matmul(a, b)
-        
-        with self.timer("matmul", {"size": size}):
+
+        def run_matmul():
             matmul(a, b)
+
+        self.run_timed_operation("matmul", {"size": size}, run_matmul)
 
     def benchmark_convolution(self, batch_size: int):
         """Benchmark 2D convolution"""
         in_channels, out_channels = 64, 128
         kernel_size = 3
         size = 32
-        
-        def init_kernel(key, shape):
-            return random.normal(key, shape) * np.sqrt(2.0 / np.prod(shape[:-1]))
-        
+
         key1, key2 = random.split(self.key)
-        kernel = init_kernel(
+        kernel = random.normal(
             key1,
             (kernel_size, kernel_size, in_channels, out_channels)
-        )
+        ) * jnp.sqrt(2.0 / (kernel_size * kernel_size * in_channels))
         x = random.normal(key2, (batch_size, size, size, in_channels))
-        
+
         @jit
-        def conv(x, w):
+        def conv(x, kernel):
             return jax.lax.conv(
                 x,
-                w,
+                kernel,
                 window_strides=(1, 1),
                 padding='SAME'
             )
-        
+
         # Compile once
         conv(x, kernel)
-        
-        with self.timer(
+
+        def run_conv():
+            conv(x, kernel)
+
+        self.run_timed_operation(
             "conv2d",
             {
                 "batch_size": batch_size,
                 "in_channels": in_channels,
                 "out_channels": out_channels,
                 "size": size
-            }
-        ):
-            conv(x, kernel)
+            },
+            run_conv
+        )
 
     def benchmark_batch_norm(self, batch_size: int):
         """Benchmark batch normalization"""
@@ -333,11 +337,11 @@ class JAXBenchmark(BenchmarkBase):
         # Compile once
         batchnorm(x)
         
-        with self.timer(
+        self.run_timed_operation(
             "batchnorm",
-            {"batch_size": batch_size, "num_features": num_features}
-        ):
+            {"batch_size": batch_size, "num_features": num_features},
             batchnorm(x)
+            )
 
     def benchmark_gradient(self, size: int):
         """Benchmark gradient computation"""
@@ -353,5 +357,4 @@ class JAXBenchmark(BenchmarkBase):
         # Compile once
         grad_fn(x)
         
-        with self.timer("gradient", {"size": size}):
-            grad_fn(x)
+        self.run_timed_operation("gradient", {"size": size},grad_fn(x))

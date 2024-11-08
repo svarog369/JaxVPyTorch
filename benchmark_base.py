@@ -1,26 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import logging
-from statistics import mean, stdev
-import time
 from pathlib import Path
 import json
 import matplotlib.pyplot as plt
-
-@dataclass
-class BenchmarkConfig:
-    """Configuration for benchmark runs"""
-    batch_sizes: List[int] = None
-    matrix_sizes: List[int] = None
-    warmup_iterations: int = 10
-    test_iterations: int = 100
-    seed: int = 42
-    
-    def __post_init__(self):
-        if self.batch_sizes is None:
-            self.batch_sizes = [1, 8, 16, 32, 64, 128]
-        if self.matrix_sizes is None:
-            self.matrix_sizes = [128, 256, 512, 1024, 2048]
 
 @dataclass
 class BenchmarkResult:
@@ -45,10 +28,10 @@ class BenchmarkResult:
 @dataclass
 class NNConfig:
     """Neural network specific configuration"""
-    hidden_sizes: List[int] = None
-    sequence_lengths: List[int] = None
-    embedding_dims: List[int] = None
-    num_heads: List[int] = None
+    hidden_sizes: List[int]|None = None
+    sequence_lengths: List[int]|None = None
+    embedding_dims: List[int]|None = None
+    num_heads: List[int]|None = None
     
     def __post_init__(self):
         if self.hidden_sizes is None:

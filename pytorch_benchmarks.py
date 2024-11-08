@@ -1,5 +1,8 @@
 import torch
-from contextlib import contextmanager
+from typing import Any, Dict, List
+import logging
+from statistics import mean, stdev
+import time
 from benchmark_base import BenchmarkBase, BenchmarkResult
 
 class PyTorchBenchmark(BenchmarkBase):
@@ -20,16 +23,16 @@ class PyTorchBenchmark(BenchmarkBase):
         
         x = torch.randn(batch_size, seq_len, hidden_size, device='cuda')
         
-        with self.timer(
+        self.run_timed_operation(
             "transformer_layer",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size,
                 "num_heads": num_heads
-            }
-        ):
+            },
             encoder_layer(x)
+        )
             
     def benchmark_lstm(self, batch_size: int, seq_len: int, hidden_size: int):
         """Benchmark LSTM forward and backward pass"""
@@ -48,15 +51,15 @@ class PyTorchBenchmark(BenchmarkBase):
             loss = torch.nn.functional.mse_loss(output, target)
             loss.backward()
         
-        with self.timer(
+        self.run_timed_operation(
             "lstm",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size
-            }
-        ):
+            },
             run_lstm()
+            )
             
     def benchmark_mlp(self, batch_size: int, input_size: int, hidden_sizes: List[int]):
         """Benchmark MLP forward and backward pass"""
@@ -81,15 +84,15 @@ class PyTorchBenchmark(BenchmarkBase):
             loss = torch.nn.functional.mse_loss(output, target)
             loss.backward()
         
-        with self.timer(
+        self.run_timed_operation(
             "mlp",
             {
                 "batch_size": batch_size,
                 "input_size": input_size,
                 "hidden_sizes": hidden_sizes
-            }
-        ):
+            },
             run_mlp()
+            )
             
     def benchmark_attention(self, batch_size: int, seq_len: int, hidden_size: int):
         """Benchmark attention mechanism"""
@@ -103,30 +106,30 @@ class PyTorchBenchmark(BenchmarkBase):
             attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1)
             return torch.bmm(attn_weights, v)
         
-        with self.timer(
+        self.run_timed_operation(
             "attention",
             {
                 "batch_size": batch_size,
                 "seq_len": seq_len,
                 "hidden_size": hidden_size
-            }
-        ):
+            },
             compute_attention()
+            )
             
     def benchmark_embedding(self, batch_size: int, vocab_size: int, embedding_dim: int):
         """Benchmark embedding layer"""
         embedding = torch.nn.Embedding(vocab_size, embedding_dim).cuda()
         indices = torch.randint(0, vocab_size, (batch_size, 32), device='cuda')
         
-        with self.timer(
+        self.run_timed_operation(
             "embedding",
             {
                 "batch_size": batch_size,
                 "vocab_size": vocab_size,
                 "embedding_dim": embedding_dim
-            }
-        ):
+            },
             embedding(indices)
+            )
             
     def benchmark_optimizer_step(self, num_params: int, optimizer: str):
         """Benchmark optimizer update step"""
@@ -149,32 +152,32 @@ class PyTorchBenchmark(BenchmarkBase):
             loss.backward()
             opt.step()
             
-        with self.timer(
+        self.run_timed_operation(
             f"optimizer_{optimizer}",
             {
                 "num_params": num_params,
                 "optimizer": optimizer
-            }
-        ):
+            },
             optimization_step()
+        )
         
-    @contextmanager
-    def timer(self, operation: str, parameters: Dict[str, Any]):
-        """Context manager for timing PyTorch operations"""
+    def run_timed_operation(self, operation: str, parameters: Dict[str, Any], func):
+        """Simple timing function for PyTorch operations"""
         times = []
         
-        # Warmup
+        # Warmup phase
         for _ in range(self.config.warmup_iterations):
-            yield
+            func()
             torch.cuda.synchronize()
-            
-        # Actual timing
+
+        # Timing phase
         for _ in range(self.config.test_iterations):
             start = time.perf_counter()
-            yield
+            func()
             torch.cuda.synchronize()
             times.append(time.perf_counter() - start)
-        
+
+        # Store and log results
         result = BenchmarkResult(
             name=f"pytorch_{operation}",
             framework="pytorch",
@@ -184,7 +187,6 @@ class PyTorchBenchmark(BenchmarkBase):
             parameters=parameters
         )
         self.results.append(result)
-        
         logging.info(
             "PyTorch %s - Mean: %.3f ms, Std: %.3f ms, Params: %s",
             operation,
@@ -198,30 +200,38 @@ class PyTorchBenchmark(BenchmarkBase):
         a = torch.randn(size, size, device='cuda')
         b = torch.randn(size, size, device='cuda')
         
-        with self.timer("matmul", {"size": size}):
+        def run_matmul():
             torch.matmul(a, b)
+        
+        self.run_timed_operation("matmul", {"size": size}, run_matmul)
 
     def benchmark_convolution(self, batch_size: int):
         """Benchmark 2D convolution"""
         in_channels, out_channels = 64, 128
         kernel_size = 3
         size = 32
-        
+
         conv = torch.nn.Conv2d(
-            in_channels, out_channels, kernel_size, padding=1
+            in_channels, 
+            out_channels, 
+            kernel_size, 
+            padding=1
         ).cuda()
         x = torch.randn(batch_size, in_channels, size, size, device='cuda')
-        
-        with self.timer(
+
+        def run_conv():
+            conv(x)
+
+        self.run_timed_operation(
             "conv2d",
             {
                 "batch_size": batch_size,
                 "in_channels": in_channels,
                 "out_channels": out_channels,
                 "size": size
-            }
-        ):
-            conv(x)
+            },
+            run_conv
+        )
 
     def benchmark_batch_norm(self, batch_size: int):
         """Benchmark batch normalization"""
@@ -231,11 +241,11 @@ class PyTorchBenchmark(BenchmarkBase):
         bn = torch.nn.BatchNorm2d(num_features).cuda()
         x = torch.randn(batch_size, num_features, size, size, device='cuda')
         
-        with self.timer(
+        self.run_timed_operation(
             "batchnorm",
-            {"batch_size": batch_size, "num_features": num_features}
-        ):
+            {"batch_size": batch_size, "num_features": num_features},
             bn(x)
+            )
 
     def benchmark_gradient(self, size: int):
         """Benchmark gradient computation"""
@@ -246,5 +256,4 @@ class PyTorchBenchmark(BenchmarkBase):
             grad, = torch.autograd.grad(y, x)
             return grad
         
-        with self.timer("gradient", {"size": size}):
-            compute_grad()
+        self.run_timed_operation("gradient", {"size": size},compute_grad())
