@@ -273,23 +273,6 @@ class PyTorchBenchmark(BenchmarkBase):
             run_conv,
         )
 
-    def benchmark_batch_norm(self, batch_size: int):
-        """Benchmark batch normalization"""
-        num_features = 64
-        size = 32
-
-        bn = torch.nn.BatchNorm2d(num_features).cuda()
-        x = torch.randn(batch_size, num_features, size, size, device="cuda")
-
-        def run_bn():
-            return bn(x)
-
-        self.run_timed_operation(
-            "batchnorm",
-            {"batch_size": batch_size, "num_features": num_features},
-            run_bn,
-        )
-
     def benchmark_gradient(self, size: int):
         """Benchmark gradient computation"""
         x = torch.randn(size, size, requires_grad=True, device="cuda")

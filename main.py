@@ -33,7 +33,6 @@ def run_benchmarks():
 
         for batch_size in config.batch_sizes:
             bench.benchmark_convolution(batch_size)
-            bench.benchmark_batch_norm(batch_size)
 
         for size in config.matrix_sizes:
             bench.benchmark_gradient(size)

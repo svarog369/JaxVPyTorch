@@ -399,34 +399,6 @@ class JAXBenchmark(BenchmarkBase):
             run_conv,
         )
 
-    def benchmark_batch_norm(self, batch_size: int):
-        """Benchmark batch normalization"""
-        num_features = 64
-        size = 32
-
-        key = random.split(self.key)[0]
-        # Use NCHW format for consistency
-        x = random.normal(key, (batch_size, num_features, size, size))
-
-        @jit
-        def batchnorm(x):
-            # Calculate mean and variance over N, H, W dimensions
-            mean = jnp.mean(x, axis=(0, 2, 3), keepdims=True)
-            var = jnp.var(x, axis=(0, 2, 3), keepdims=True)
-            return (x - mean) / jnp.sqrt(var + 1e-5)
-
-        # Compile once
-        batchnorm(x)
-
-        def run_batchnorm():
-            batchnorm(x)
-
-        self.run_timed_operation(
-            "batchnorm",
-            {"batch_size": batch_size, "num_features": num_features},
-            run_batchnorm,
-        )
-
     def benchmark_gradient(self, size: int):
         """Benchmark gradient computation"""
         key = random.split(self.key)[0]

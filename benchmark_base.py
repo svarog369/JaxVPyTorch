@@ -86,10 +86,6 @@ class BenchmarkBase:
         """Benchmark 2D convolution"""
         raise NotImplementedError
 
-    def benchmark_batch_norm(self, batch_size: int):
-        """Benchmark batch normalization"""
-        raise NotImplementedError
-
     def benchmark_gradient(self, size: int):
         """Benchmark gradient computation"""
         raise NotImplementedError
