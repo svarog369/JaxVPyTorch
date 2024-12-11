@@ -72,7 +72,7 @@ The benchmark suite is designed to be memory-efficient and includes several opti
 
 1. Clone the repository:
 ```bash
-git clone https://dapt-gitlab.avl.com/proj/dfe0195/pytorchvsjax.git
+git clone https://github.com/svarog369/JaxVPyTorch.git
 cd pytorchvsjax
 ```
 
