@@ -73,7 +73,7 @@ The benchmark suite is designed to be memory-efficient and includes several opti
 1. Clone the repository:
 ```bash
 git clone https://github.com/svarog369/JaxVPyTorch.git
-cd pytorchvsjax
+cd jaxvpytorch
 ```
 
 2. Create and activate a virtual environment (recommended):
