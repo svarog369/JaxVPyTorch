@@ -7,7 +7,6 @@ A comprehensive benchmarking suite comparing PyTorch and JAX performance on GPU 
 ### Basic Operations
 - Matrix Multiplication
 - 2D Convolution (with NCHW format)
-- Batch Normalization
 - Gradient Computation
 
 ### Neural Network Components
